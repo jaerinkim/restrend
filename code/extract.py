@@ -142,12 +142,15 @@ def shopDates(df,keywords,type,endDate = pd.to_datetime('20240512')):
         print(x)
         print(out)
         out = out._append(x)
+    out['광역'] = out['지역'].str.split(' ').str[0]
+    out['시군구'] = out['지역'].str.split(' ').str[1]
+    out['읍면동'] = out['지역'].str.split(' ').str[2].str[:-11]
+    out['연월일'] = out['지역'].str[-10:]
+    out['지역'] = out['지역'].str[:-11]
     return(out)
 
 
 ## 마라 예시
-mala = shopDates(df,['마라'],['중국식','일반조리판매'])
-mala['광역'] = mala['지역'].str.split(' ').str[0]
-mala['시군구'] = mala['지역'].str.split(' ').str[1]
-mala['읍면동'] = mala['지역'].str.split(' ').str[2].str[:-11]
-mala.to_csv("마라예시.csv",encoding='EUC-KR')
+# mala = shopDates(df,['마라'],['중국식','일반조리판매'])
+
+# mala.to_csv("마라예시.csv",encoding='EUC-KR')
