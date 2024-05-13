@@ -1,6 +1,6 @@
 ## 사업장과 업태구분명을 키워드로 입력하면 행정안전부에서 제공하는 일반, 휴게음식점 표준데이터에서 해당업종의 일간 업체 수를 출력하는 프로그램입니다.
 ## 예)'마라'가 사업장명에 들어간 '중국식' 업태 업체를 입력하면 2022년 1월 1일, 2일,... 에 서초동, 보광동,... 에 몇 개의 마라 음식점이 있었는지 출력합니다.
-## 다음 버전에서는 월별 결과 출력과 위치 정보 출력을 지원할 예정입니다.
+## 지원 예정: 월별 및 연간 결과 출력, 위치 정보 출력, 가게가 한 번도 없었던 지역의 데이터를 삽입.
 ## Author : 김재린
 
 import pandas as pd
@@ -79,10 +79,10 @@ def dates(date,enddate):
 ## 추후 다른 조건이 추가될 시 argument를 추가하면 됨.
 
 ## keywords에 포함된 string이 사업장명에 포함된 업소들을 출력함.
-## 단, type에 포함된 string이 사업장명에 포함된 업소에 한정함.
-def search(df,keywords,type):
+## 단, rtype에 포함된 string이 사업장명에 포함된 업소에 한정함.
+def search(df,keywords,rtype):
     out = df[df['사업장명'].str.contains('|'.join(keywords))]
-    return(out[out['업태구분명'].str.contains('|'.join(type))])
+    return(out[out['업태구분명'].str.contains('|'.join(rtype))])
 
 ## dataframe을 입력하면 첫 인허가일자를 출력함.
 def findStartDate(df):
@@ -103,6 +103,7 @@ def getNew(df, prev, date):
 def genRegion(df):
     regions = df['지역'].unique()
     return(regions)
+
 ## startDate부터 endDate까지 매일을 출력함.
 def genDates(startDate,endDate):
     out = []
@@ -113,7 +114,7 @@ def genDates(startDate,endDate):
 
 ## region 지역에서 업체가 하나라도 존재했던 시점부터 enddate까지 매일 업체의 수와 해당 날짜를 출력함
 
-def genShops(df,region,endDate = pd.to_datetime('20240512')):
+def genShops(df,region,endDate = pd.to_datetime('20240331')):
     df = df[df['지역']==region]
     startDate = df['인허가일자'].min()
     prev = (df['인허가일자'] == '0')
@@ -127,10 +128,11 @@ def genShops(df,region,endDate = pd.to_datetime('20240512')):
 
 ## 조건에 맞는 업체가 하나라도 존재했던 시점부터 endDate까지 매일 업체의 수를 DataFrame으로 출력함
 ## keywords에 포함된 string이 사업장명에 포함된 업소들을 출력함.
-## 단, type에 포함된 string이 사업장명에 포함된 업소에 한정함.
+## 단, rtype에 포함된 string이 사업장명에 포함된 업소에 한정함.
 
-def shopDates(df,keywords,type,endDate = pd.to_datetime('20240512')):
-    df = search(df=df,keywords=keywords,type=type)
+def shopDates(df,keywords,rtype,endDate = pd.to_datetime('20240331')):
+    allRegions = genRegion(df)
+    df = search(df=df,keywords=keywords,rtype=rtype)
     out = pd.DataFrame([],columns=['지역',keywords[0]])
     regions = genRegion(df)
     dates = genDates(findStartDate(df),endDate)
@@ -138,12 +140,19 @@ def shopDates(df,keywords,type,endDate = pd.to_datetime('20240512')):
     for i in regions:
         y = genShops(df,i)
         dates = pd.DataFrame(y[1])
-        index = i + '_' + dates[0].dt.date.astype(str)
-        x = pd.DataFrame(y[0],index=index,columns=[keywords[0]])
-        x['지역'] = x.index
-        print(x)
-        print(out)
-        out = out._append(x)
+        if len(dates)!=0:
+            index = i + '_' + dates[0].dt.date.astype(str)
+            x = pd.DataFrame(y[0],index=index,columns=[keywords[0]])
+            x['지역'] = x.index
+            print(x)
+            print(out)
+            out = out._append(x)
+        # 가게가 없는 지역의 값을 0으로 채워넣는 수정이 추후 필요함
+        else:
+            next
+    ## 관찰이 없는 지역들을 아래 조건문에 삽입
+    if len(regions)!=len(allRegions):
+        pass
     out['광역'] = out['지역'].str.split(' ').str[0]
     out['시군구'] = out['지역'].str.split(' ').str[1]
     out['읍면동'] = out['지역'].str.split(' ').str[2].str[:-11]
@@ -155,3 +164,9 @@ def shopDates(df,keywords,type,endDate = pd.to_datetime('20240512')):
 ## 마라 예시
 # mala = shopDates(df,['마라'],['중국식','일반조리판매'])
 # mala.to_csv("마라예시.csv",encoding='EUC-KR')
+
+# df의 시간을 제한하는 함수
+# shopDates에 옵션으로 넣을 것을 고려
+def timeLimit(df):
+    out=pd.to_datetime(df['연월일'])>pd.to_datetime('20201231')
+    return(out)
