@@ -82,7 +82,10 @@ def dates(date,enddate):
 ## 단, rtype에 포함된 string이 사업장명에 포함된 업소에 한정함.
 def search(df,keywords,rtype):
     out = df[df['사업장명'].str.contains('|'.join(keywords))]
-    return(out[out['업태구분명'].str.contains('|'.join(rtype))])
+    if len(rtype)==0:
+        return(out)
+    else:
+        return(out[out['업태구분명'].str.contains('|'.join(rtype))])
 
 ## dataframe을 입력하면 첫 인허가일자를 출력함.
 def findStartDate(df):
@@ -160,6 +163,23 @@ def shopDates(df,keywords,rtype,endDate = pd.to_datetime('20240331')):
     out['지역'] = out['지역'].str[:-11]
     return(out)
 
+def listToCsv(df,searchList,endDate = pd.to_datetime('20240331')):
+    for i in searchList:
+        out = shopDates(df,i[0],i[1],endDate)
+        out.to_csv(i[0][0] + ".csv", encoding="EUC-KR")
+    return()
+
+def csvToOut(restname):
+    out = pd.read_csv(restname+".csv",index_col=0)
+    return(out)
+
+def getRecent(df,keywords,rtype):
+    temp = search(df,keywords,rtype)
+    temp = temp[temp.상세영업상태명=="영업"]
+    temp = temp.groupby("지역").size()
+    return(temp)
+        
+    
 
 ## 마라 예시
 # mala = shopDates(df,['마라'],['중국식','일반조리판매'])
