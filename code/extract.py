@@ -47,18 +47,31 @@ def init(generalPath = "../../data/fulldata_07_24_04_P_일반음식점.csv", sma
             ## datetime 형식으로 변환
             j[i] = pd.to_datetime(j[i], format='%Y%m%d')
 
-    df = general._append(small)
+    df = pd.concat([dfs[0],dfs[1]])
     df.dropna(subset='사업장명', inplace=True)
+ 
     df['광역'] = df['소재지전체주소'].str.split(' ').str[0]
     df['시군구'] = df['소재지전체주소'].str.split(' ').str[1]
     df['읍면동'] = df['소재지전체주소'].str.split(' ').str[2]
-
     df.loc[df['광역']=="세종특별자치시",'읍면동'] = df.loc[df['광역']=="세종특별자치시",'시군구']
-    df.loc[df['광역']=="세종특별자치시",'시군구'] = "세종특별자치시"
-
+    df.loc[df['광역']=="세종특별자치시",'시군구'] = ""
+    
     ## 일관성을 위해 일관되지 않은 주소들은 검색에서 제외했습니다. (예: 한국마사회)
-    df = df[df['광역'].isin(df['광역'].unique()[:16])]
+    rglist=['전북특별자치도', '충청북도', '경기도', '강원특별자치도', '대구광역시', '서울특별시', '광주광역시', '전라남도',
+            '경상북도', '인천광역시', '부산광역시', '대전광역시', '충청남도', '경상남도', '울산광역시',
+            '제주특별자치도', '세종특별자치시']
+        
+    df = df[df['광역'].isin(rglist)]
+
+    ## 광역시가 아닌 시의 읍면동 정보를 정확하게 수정함.
+    temp = df['소재지전체주소'].str.split(' ').str[3]
+    temp1 = temp.str.extract(r'(^[가-힣]+[동,면,읍,리]$)')
+    temp2 = df.읍면동.str.extract(r'^([가-힣]+구)$')
+    tbool = ~(temp1.isna()[0] | temp2.isna()[0])
+    df.loc[tbool,'시군구'] = df.loc[tbool,'시군구'] + " " + df.loc[tbool,'읍면동']
+    df.loc[tbool,'읍면동'] = temp1.loc[tbool,0]
     df['지역'] = df['광역'] + ' ' + df['시군구'] + ' ' + df['읍면동']
+    df.loc[df.광역=='세종특별자치시','지역'] = df.loc[df.광역=='세종특별자치시','광역'] + " " + df.loc[df.광역=='세종특별자치시','읍면동']
     return(df)
 
 
@@ -81,11 +94,17 @@ def dates(date,enddate):
 ## keywords에 포함된 string이 사업장명에 포함된 업소들을 출력함.
 ## 단, rtype에 포함된 string이 사업장명에 포함된 업소에 한정함.
 def search(df,keywords,rtype):
-    out = df[df['사업장명'].str.contains('|'.join(keywords))]
-    if len(rtype)==0:
-        return(out)
+    if len(keywords)==0:
+        if len(rtype)==0:
+            return(df)
+        else:
+            return(df[df['업태구분명'].str.contains('|'.join(rtype))])
     else:
-        return(out[out['업태구분명'].str.contains('|'.join(rtype))])
+        out = df[df['사업장명'].str.contains('|'.join(keywords))]
+        if len(rtype)==0:
+            return(out)
+        else:
+            return(out[out['업태구분명'].str.contains('|'.join(rtype))])
 
 ## dataframe을 입력하면 첫 인허가일자를 출력함.
 def findStartDate(df):
@@ -104,7 +123,7 @@ def getNew(df, prev, date):
 ## 동면읍과 년월일의 cartesian product 리스트를 출력함
 ## startDate는 조사를 시작할 날짜의 timestamp
 def genRegion(df):
-    regions = df['지역'].unique()
+    regions = pd.Series(df['지역'].unique()).dropna()
     return(regions)
 
 ## startDate부터 endDate까지 매일을 출력함.
@@ -117,10 +136,10 @@ def genDates(startDate,endDate):
 
 ## region 지역에서 업체가 하나라도 존재했던 시점부터 enddate까지 매일 업체의 수와 해당 날짜를 출력함
 
-def genShops(df,region,endDate = pd.to_datetime('20240331')):
+def genShops(df,region,startDate=pd.to_datetime('20040301'),endDate = pd.to_datetime('20240331')):
     df = df[df['지역']==region]
-    startDate = df['인허가일자'].min()
-    prev = (df['인허가일자'] == '0')
+    startDate = max(df['인허가일자'].min(),startDate)
+    prev = (df['인허가일자'] < startDate) & ~(df['폐업일자']< startDate)
     out = [[],[]]
     while startDate <= endDate:
         prev = getNew(df,prev,startDate)
@@ -129,43 +148,85 @@ def genShops(df,region,endDate = pd.to_datetime('20240331')):
         startDate = startDate + pd.DateOffset(1)
     return(out)
 
-## 조건에 맞는 업체가 하나라도 존재했던 시점부터 endDate까지 매일 업체의 수를 DataFrame으로 출력함
+
+## 조건에 맞는 업체가 하나라도 존재했던 시점이나 startDate 중 늦은 시점부터 endDate까지 매일 업체의 수를 DataFrame으로 출력함
 ## keywords에 포함된 string이 사업장명에 포함된 업소들을 출력함.
 ## 단, rtype에 포함된 string이 사업장명에 포함된 업소에 한정함.
 
-def shopDates(df,keywords,rtype,endDate = pd.to_datetime('20240331')):
-    allRegions = genRegion(df)
+def shopDates(df,keywords,rtype,startDate=pd.to_datetime('20040331'),endDate = pd.to_datetime('20240331')):
     df = search(df=df,keywords=keywords,rtype=rtype)
-    out = pd.DataFrame([],columns=['지역',keywords[0]])
+    out = pd.DataFrame([],columns=['지역','광역','시군구','읍면동','연월일',keywords[0]])
     regions = genRegion(df)
-    dates = genDates(findStartDate(df),endDate)
+    dates = genDates(max(startDate,findStartDate(df)),endDate)
     dates = pd.DataFrame(dates)
     for i in regions:
         y = genShops(df,i)
         dates = pd.DataFrame(y[1])
         if len(dates)!=0:
+            print(f'Processing {i}')
             index = i + '_' + dates[0].dt.date.astype(str)
             x = pd.DataFrame(y[0],index=index,columns=[keywords[0]])
-            x['지역'] = x.index
-            print(x)
-            print(out)
-            out = out._append(x)
-        # 가게가 없는 지역의 값을 0으로 채워넣는 수정이 추후 필요함
+            temp = df[df.지역==i].iloc[0]
+            x['지역'] = temp.지역
+            x['광역'] = temp.광역
+            x['시군구'] = temp.시군구
+            x['읍면동'] = temp.읍면동
+            x['연월일'] = x.index.str[-10:]
+            out = pd.concat([out,x])
         else:
             next
-    ## 관찰이 없는 지역들을 아래 조건문에 삽입
-    if len(regions)!=len(allRegions):
-        pass
-    out['광역'] = out['지역'].str.split(' ').str[0]
-    out['시군구'] = out['지역'].str.split(' ').str[1]
-    out['읍면동'] = out['지역'].str.split(' ').str[2].str[:-11]
-    out['연월일'] = out['지역'].str[-10:]
-    out['지역'] = out['지역'].str[:-11]
     return(out)
 
-def listToCsv(df,searchList,endDate = pd.to_datetime('20240331')):
+
+# 성능상의 문제가 있을시 이 버전 사용.
+# def shopDates(df,keywords,rtype,startDate=pd.to_datetime('20040331'),endDate=pd.to_datetime('20240331')):
+#     allRegions = genRegion(df)
+#     df = search(df=df,keywords=keywords,rtype=rtype)
+#     regions = genRegion(df)
+#     dates = genDates(max(startDate,findStartDate(df)),endDate)
+#     dates = pd.Series(dates).dt.strftime('%Y-%m-%d')
+#     temp = pd.DataFrame(index=allRegions)
+#     name = keywords[0]
+#     temp[name] = 0
+#     print(f'Initializing {name}')
+#     opened = df[df.인허가일자<=startDate].지역.dropna()
+#     for i in opened:
+#         temp.loc[temp.index==i,name] += 1
+#     closed = df[df.폐업일자<=startDate].지역.dropna()
+#     for i in closed:
+#         temp.loc[temp.index==i,name] -= 1
+#     temp.index = temp.index + '_' + dates[0]
+#     out = temp.copy()
+        
+#     for i in dates[1:]:
+#         temp.index = temp.index.str[:-11]
+#         opened = df[df.인허가일자==i].index
+#         for j in opened:
+#             temp.loc[temp.index==j,name] += 1
+#             print(f'{name} 인허가: {i}')
+#         closed = df[df.폐업일자==i].index
+#         for j in closed:
+#             temp.loc[temp.index==j,name] -= 1
+#             print(f'{name} 폐업: {i}')
+#         temp.index = temp.index + '_' + i
+#         out = pd.concat([out, temp])
+#     return(out)
+
+
+def regionToTab(regions):
+    out = pd.DataFrame(index=regions, columns=[])
+    out['광역'] = out.index.str.split(' ').str[0]
+    out['시군구'] = out.index.str.split(' ').str[1]
+    out['읍면동'] = out.index.str.split(' ').str[2]
+    temp = out.index.str.split(' ').str[3]
+    tbool = ~temp.isna()
+    out.loc[tbool,'시군구'] = out.loc[tbool,'시군구'] + " " + out.loc[tbool,'읍면동']
+    out.loc[tbool,'읍면동'] = temp[tbool]
+    return(out)
+
+def listToCsv(df,searchList,startDate = pd.to_datetime('20040331'),endDate = pd.to_datetime('20240331')):
     for i in searchList:
-        out = shopDates(df,i[0],i[1],endDate)
+        out = shopDates(df,i[0],i[1],startDate,endDate)
         out.to_csv(i[0][0] + ".csv", encoding="EUC-KR")
     return()
 
@@ -176,10 +237,8 @@ def csvToOut(restname):
 def getRecent(df,keywords,rtype):
     temp = search(df,keywords,rtype)
     temp = temp[temp.상세영업상태명=="영업"]
-    temp = temp.groupby("지역").size()
+    temp = temp.groupby(['광역','시군구','읍면동']).size()
     return(temp)
-        
-    
 
 ## 마라 예시
 # mala = shopDates(df,['마라'],['중국식','일반조리판매'])
