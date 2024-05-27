@@ -163,7 +163,7 @@ def shopDates(df,keywords,rtype,startDate=pd.to_datetime('20040331'),endDate = p
         y = genShops(df,i)
         dates = pd.DataFrame(y[1])
         if len(dates)!=0:
-            print(f'Processing {i}')
+            print(f'Processing {keywords[0]} at {i}')
             index = i + '_' + dates[0].dt.date.astype(str)
             x = pd.DataFrame(y[0],index=index,columns=[keywords[0]])
             temp = df[df.지역==i].iloc[0]

@@ -29,12 +29,9 @@ ex.listToCsv(df, searchList)
 # result = result1+result2+result3
 # pd.Series(result).value_counts().to_csv("최빈명사.csv", encoding="EUC-KR")
 
-
-out = ex.getRecent(df,[],[])
-out.name = "전체recent"
-out.fillna(0,inplace=True)
-out.to_csv("지역별총음식점.csv",encoding="EUC-KR")
-
+# 메모리 문제로 데이터셋을 둘로 나눔
+# searchList2 = searchList[37:]
+# searchList = searchList[:37]
 
 dflist = []
 for i in searchList:
@@ -48,12 +45,29 @@ for i in range(len(dflist)):
         out = pd.concat([out,read], axis=1)
     else:
         out = read
+        flag = True
 out.fillna(0, inplace=True)
+out.columns = out.columns + "max"
 out.to_csv("지역별최대치.csv",encoding="EUC-KR")
 
 flag = False
 for i in range(len(dflist)):
-    name = searchList[i]
+    name = searchList[i][0][0]
+    read = dflist[i][dflist[i].index.str[-10:]=='2024-03-31']
+    read.index = [read.광역,read.시군구,read.읍면동]
+    read = read[name]
+    if flag:
+        out = pd.concat([out,read], axis=1)
+    else:
+        out = read
+        flag = True
+out.fillna(0, inplace=True)
+out.columns = out.columns + "recent2"
+out.to_csv("지역별최근값2.csv",encoding="EUC-KR")
+
+flag = False
+for i in range(len(dflist)):
+    name = searchList[i][0][0]
     read = dflist[i][pd.to_datetime(dflist[i].연월일)>pd.to_datetime("2004-03-31")]
     read1 = read.groupby(['광역','시군구','읍면동']).idxmin(numeric_only=name)
     read2 = read.groupby(['광역','시군구','읍면동']).idxmax(numeric_only=name)
@@ -66,10 +80,15 @@ for i in range(len(dflist)):
         out = read1
         out2 = read2
         flag = True
-out.fillna(0, inplace=True)
-out2.fillna(0, inplace=True)
+out.columns = out.columns + "minDate"
+out2.columns = out2.columns + "maxDate"
 out.to_csv("지역별최소치일자.csv",encoding="EUC-KR")
 out2.to_csv("지역별최대치일자.csv",encoding="EUC-KR")
+
+out = ex.getRecent(df,[],[])
+out.name = "전체recent"
+out.fillna(0,inplace=True)
+out.to_csv("지역별총음식점.csv",encoding="EUC-KR")
 
 flag = False
 for i in searchList:
@@ -82,3 +101,32 @@ for i in searchList:
         flag = True
 out.fillna(0,inplace=True)
 out.to_csv("지역별최근값.csv",encoding="EUC-KR")
+
+# 데이터 통합
+out = pd.read_csv("지역별최근값.csv",encoding="EUC-KR",index_col=("광역","시군구","읍면동"))
+out1 = pd.read_csv("지역별최근값2.csv",encoding="EUC-KR",index_col=("광역","시군구","읍면동"))
+out2 = pd.read_csv("지역별최대치.csv",encoding="EUC-KR",index_col=("광역","시군구","읍면동"))
+out3 = pd.read_csv("지역별총음식점.csv",encoding="EUC-KR",index_col=("광역","시군구","읍면동"))
+out = pd.concat([out,out1,out2,out3],axis=1)
+out.fillna(0, inplace=True)
+
+out2 = pd.read_csv("지역별최대치일자.csv",encoding="EUC-KR",index_col=("광역","시군구","읍면동"))
+out3 = pd.read_csv("지역별최소치일자.csv",encoding="EUC-KR",index_col=("광역","시군구","읍면동"))
+for i in out2.columns:
+    out2[i] = pd.to_datetime(out2[i], format ="%Y-%m-%d")
+for i in out3.columns:
+    out3[i] = pd.to_datetime(out3[i], format ="%Y-%m-%d")
+    out[i[:-7] + 'dateRange'] = (out3[i] - out2[i[:-7] + "maxDate"]).apply(lambda x : x.days)
+out = pd.concat([out,out2,out3],axis=1)
+
+out2 = pd.read_csv("../../data/법정동인구2023.csv")
+out2.rename(columns={'시도명': '광역', '시군구명': '시군구', '읍면동명': '읍면동'}, inplace=True)
+out2 = out2.groupby(["광역","시군구","읍면동"]).sum().iloc[:,1:]
+out2.drop(columns=["기준연월","리명"],inplace=True)
+out2['인구'] = out2[out2.columns[1:]].sum(axis=1)
+out2['남자인구'] = out2[out2.columns[out2.columns.str[-2:]=='남자']].sum(axis=1)
+out2['여자인구'] = out2[out2.columns[out2.columns.str[-2:]=='여자']].sum(axis=1)
+out = pd.concat([out,out2],axis=1)
+
+out.to_csv("전체_임시.csv",encoding='EUC-KR')
+
