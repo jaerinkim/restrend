@@ -12,14 +12,12 @@ slist = ['식당', '치킨', '호프', '분식', '갈비', '칼국수', '피자'
          '국밥', '바베큐', '순대', '냉면', '꼬치', '추어탕', '닭갈비', '오리', '비어', '아구찜', '한우', '삼겹살']
 
 # rlist = searchList
-for i in slist:
-    searchList.append([[i],[]])
-    
-slist = []
-for i in searchList:
-    slist.append(i[0][0])    
 
-ex.listToCsv(df, searchList)
+searchList.extend([[[i],[]] for i in slist])
+
+slist = [i[0][0] for i in searchList]
+
+# ex.listToCsv(df, searchList)
 
 # 최빈명사 검색
 # x = df.사업장명.str.cat()
@@ -34,9 +32,10 @@ ex.listToCsv(df, searchList)
 # searchList = searchList[:37]
 
 dflist = []
-for i in searchList:
-    print(f'Appending {i[0][0]}')
-    dflist.append(pd.read_csv(i[0][0]+".csv",index_col=0,encoding="EUC-KR"))
+for i,j in enumerate(searchList):
+    print(f'Appending {j[0][0]}')
+    dflist.append(pd.read_csv(j[0][0]+".csv",index_col=0,encoding="EUC-KR"))
+    dflist[i] = dflist[i][pd.to_datetime(dflist[i].연월일)>=pd.to_datetime("2004-03-31")]
 
 flag = False
 for i in range(len(dflist)):
@@ -64,13 +63,13 @@ for i in range(len(dflist)):
 out.fillna(0, inplace=True)
 out.columns = out.columns + "recent2"
 out.to_csv("지역별최근값2.csv",encoding="EUC-KR")
+read = 0
 
 flag = False
 for i in range(len(dflist)):
     name = searchList[i][0][0]
-    read = dflist[i][pd.to_datetime(dflist[i].연월일)>pd.to_datetime("2004-03-31")]
-    read1 = read.groupby(['광역','시군구','읍면동']).idxmin(numeric_only=name)
-    read2 = read.groupby(['광역','시군구','읍면동']).idxmax(numeric_only=name)
+    read1 = dflist[i].groupby(['광역','시군구','읍면동']).idxmin(numeric_only=name)
+    read2 = dflist[i].groupby(['광역','시군구','읍면동']).idxmax(numeric_only=name)
     read1[name] = read1[name].str[-10:]
     read2[name] = read2[name].str[-10:]
     if flag:
@@ -103,11 +102,12 @@ out.fillna(0,inplace=True)
 out.to_csv("지역별최근값.csv",encoding="EUC-KR")
 
 # 데이터 통합
-out = pd.read_csv("지역별최근값.csv",encoding="EUC-KR",index_col=("광역","시군구","읍면동"))
+# out = pd.read_csv("지역별최근값.csv",encoding="EUC-KR",index_col=("광역","시군구","읍면동"))
 out1 = pd.read_csv("지역별최근값2.csv",encoding="EUC-KR",index_col=("광역","시군구","읍면동"))
 out2 = pd.read_csv("지역별최대치.csv",encoding="EUC-KR",index_col=("광역","시군구","읍면동"))
-out3 = pd.read_csv("지역별총음식점.csv",encoding="EUC-KR",index_col=("광역","시군구","읍면동"))
-out = pd.concat([out,out1,out2,out3],axis=1)
+# out3 = pd.read_csv("지역별총음식점.csv",encoding="EUC-KR",index_col=("광역","시군구","읍면동"))
+# out = pd.concat([out,out1,out2,out3],axis=1)
+out = pd.concat([out1,out2],axis=1)
 out.fillna(0, inplace=True)
 
 out2 = pd.read_csv("지역별최대치일자.csv",encoding="EUC-KR",index_col=("광역","시군구","읍면동"))
@@ -123,10 +123,21 @@ out2 = pd.read_csv("../../data/법정동인구2023.csv")
 out2.rename(columns={'시도명': '광역', '시군구명': '시군구', '읍면동명': '읍면동'}, inplace=True)
 out2 = out2.groupby(["광역","시군구","읍면동"]).sum().iloc[:,1:]
 out2.drop(columns=["기준연월","리명"],inplace=True)
-out2['인구'] = out2[out2.columns[1:]].sum(axis=1)
-out2['남자인구'] = out2[out2.columns[out2.columns.str[-2:]=='남자']].sum(axis=1)
-out2['여자인구'] = out2[out2.columns[out2.columns.str[-2:]=='여자']].sum(axis=1)
-out = pd.concat([out,out2],axis=1)
+# out2['인구'] = out2[out2.columns[1:]].sum(axis=1)
+# out2['남자인구'] = out2[out2.columns[out2.columns.str[-2:]=='남자']].sum(axis=1)
+# out2['여자인구'] = out2[out2.columns[out2.columns.str[-2:]=='여자']].sum(axis=1)
+out2['성비'] = out2[out2.columns[out2.columns.str[-2:]=='남자']].sum(axis=1).divide(out2[out2.columns[out2.columns.str[-2:]=='여자']].sum(axis=1))
+out2['10대비율'] = out2[out2.columns[out2.columns.str[:3]=='10대']].sum(axis=1).divide(df.인구)
+out2['20대비율'] = out2[out2.columns[out2.columns.str[:3]=='20대']].sum(axis=1).divide(df.인구)
+out2['30대비율'] = out2[out2.columns[out2.columns.str[:3]=='30대']].sum(axis=1).divide(df.인구)
+out2['40대비율'] = out2[out2.columns[out2.columns.str[:3]=='40대']].sum(axis=1).divide(df.인구)
+out2['50대비율'] = out2[out2.columns[out2.columns.str[:3]=='50대']].sum(axis=1).divide(df.인구)
+out2['60대이상비율'] = 1 - out2['10대비율'] - out2['20대비율'] - out2['30대비율'] - out2['40대비율'] - out2['50대비율']
+out2 = out2.iloc[:,-7:]
+out = pd.concat([out2,out],axis=1)
 
-out.to_csv("전체_임시.csv",encoding='EUC-KR')
-
+rlist = pd.Series(out.columns.str.extract(r'(^[가-힣]+max$)').dropna()[0]).str[:-3]
+out2 = pd.read_csv("전체값2.csv", encoding = "EUC-KR", index_col=['광역','시군구','읍면동'])
+out = pd.concat([out,out2], axis=1)
+out[pd.concat([rlist+'max',rlist+'recent',rlist+'recent2'])] = out[pd.concat([rlist+'max',rlist+'recent',rlist+'recent2'])].fillna(0)
+out.to_csv("전체값3.csv",encoding='EUC-KR')
